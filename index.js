@@ -13,7 +13,6 @@ const FWD = "fwd";
 const FWD_STREAMED = 0; // default
 const FWD_BUFFERED = 2;
 const FWD_CLONED = 1;
-const HDR_CONTENT_LEN = "Content-Length"; // Legacy constant name kept for reference
 const HDR_CONTENT_LENGTH = "Content-Length";
 const ODOH_METHOD = "POST";
 const ODOH_TARGETHOST = "targethost";
@@ -60,9 +59,9 @@ function proxyStatusKV(code) {
  * @returns {Response}
  */
 function r500(txt) {
-  return new Response(null, {
+  return new Response(txt, {
     status: 500,
-    statusText: txt,
+    statusText: "Internal Server Error",
     headers: { ...ODOH_HDR_PROXY_ERR },
   });
 }
@@ -74,16 +73,16 @@ function r500(txt) {
  * @returns {Response}
  */
 function r400(txt) {
-  return new Response(null, {
+  return new Response(txt, {
     status: 400,
-    statusText: txt,
+    statusText: "Bad Request",
     headers: { ...ODOH_HDR_PROXY_ERR },
   });
 }
 
 /**
  * Constructs an HTTP 405 Method Not Allowed error response.
- * RFC 9230 requires MUST use HTTP POST for ODoH requests..
+ * RFC 9230 Section 4.1 mandates HTTP POST for ODoH requests.
  * @param {string} txt - Descriptive error message
  * @returns {Response}
  */
@@ -100,7 +99,9 @@ function r405(txt) {
 
 /**
  * Formats response from downstream target to client, capturing upstream headers
- * into debug x-* response headers.
+ * into debug `x-*` response headers.
+ * Note: Renames headers as Cloudflare Snippets snips some out (like the "Location" header).
+ *
  * @param {Response} r - Downstream Target Response
  * @param {Request} fwdreq - Upstream Subrequest sent to target
  * @returns {Response}
@@ -133,7 +134,7 @@ function response(r, fwdreq) {
 
 /**
  * Builds a clean upstream Request for ODoH proxying (Mode 0: Streaming).
- * Strips client-identifying headers to preserve client anonymity per RFC 9230 section 4.1.
+ * Strips client-identifying headers to preserve client anonymity as mandated by RFC 9230 section 4.1.
  *
  * @param {URL|string} u - Upstream Target URL
  * @param {Request} r - Original incoming Client Request
@@ -152,7 +153,7 @@ function request(u, r) {
     },
   };
 
-  // Node.js / Undici runtime compatibility for Request body streaming in local tests
+  // Node.js / Undici runtime compatibility for Request body streaming during local testing
   if (r.body && typeof process !== "undefined" && process.versions?.node) {
     init.duplex = "half";
   }
@@ -162,6 +163,8 @@ function request(u, r) {
 
 /**
  * Builds a cloned upstream Request for ODoH proxying (Mode 1: Cloned).
+ * Note: Used to follow redirects (see stackoverflow.com/questions/55920957).
+ *
  * @param {URL|string} u - Upstream Target URL
  * @param {Request} r - Original incoming Client Request
  * @returns {Request}
@@ -175,6 +178,8 @@ function clonedRequest(u, r) {
 /**
  * Builds a buffered upstream Request for ODoH proxying (Mode 2: Buffered).
  * Reads full request body into ArrayBuffer prior to subrequest dispatch.
+ * Note: Used to follow redirects (see stackoverflow.com/questions/55920957).
+ *
  * @param {URL|string} u - Upstream Target URL
  * @param {ArrayBuffer} body - Buffered body contents
  * @returns {Request}
@@ -295,7 +300,6 @@ function ensureLeadingSlash(path) {
 }
 
 /**
- * Main HTTP request handler for ODoH Proxy Worker.
  * Proxy the ODoH request to the target host/path and return the response.
  * Handles request validation, target routing, subrequest forwarding, and response delivery.
  *
@@ -307,21 +311,24 @@ async function handleRequest(req) {
     // https://odoh.proxy/dns-query?targethost=&targetpath=
     // https://odoh.proxy/{targethost}/{targetpath}
     const u = new URL(req.url);
+
+    // Validate HTTP Method (RFC 9230 Section 4.1 requires HTTP POST)
+    if (req.method !== ODOH_METHOD) {
+      return r405(`Method Not Allowed: Only ${ODOH_METHOD} is supported for ODoH requests.`);
+    }
+
     const host = get(u, ODOH_TARGETHOST);
     const path0 = get(u, ODOH_TARGETPATH);
     const fwdRaw = get(u, FWD);
 
-    if (req.method !== ODOH_METHOD) {
-      return r405(`Only ${ODOH_METHOD}`);
-    }
     if (!host) {
-      return r400(`Missing ${ODOH_TARGETHOST}`);
+      return r400(`Missing required parameter: ${ODOH_TARGETHOST}`);
     }
     if (!path0) {
-      return r400(`Missing ${ODOH_TARGETPATH}`);
+      return r400(`Missing required parameter: ${ODOH_TARGETPATH}`);
     }
 
-    // Parse forwarding mode integer safely (default: 0 - FWD_STREAMED)
+    // Parse forwarding mode integer (default: 0 - FWD_STREAMED)
     let fwdMode = FWD_STREAMED;
     if (fwdRaw !== "") {
       const parsed = parseInt(fwdRaw, 10);
@@ -359,7 +366,7 @@ async function handleRequest(req) {
       return cloneResponse(downstream, fwdreq);
     }
   } catch (err) {
-    console.error(err);
+    console.error("ODoH Proxy handleRequest Exception:", err);
     return r500(err.message || "Internal Server Error");
   }
 }
