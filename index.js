@@ -83,7 +83,7 @@ function r400(txt) {
 
 /**
  * Constructs an HTTP 405 Method Not Allowed error response.
- * RFC 9230 requires MUST use HTTP POST for ODoH requests.
+ * RFC 9230 requires MUST use HTTP POST for ODoH requests..
  * @param {string} txt - Descriptive error message
  * @returns {Response}
  */
