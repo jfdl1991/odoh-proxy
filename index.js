@@ -15,9 +15,9 @@ const ODOH_TARGETHOST = "targethost";
 const ODOH_TARGETPATH = "targetpath";
 
 // Forwarding Modes (fwd parameter)
-const FWD_STREAMED = 0; // Default: Streams request body (lowest latency & memory)
-const FWD_CLONED = 1;   // Clones request (preserves original request metadata)
-const FWD_BUFFERED = 2; // Buffers body into memory ArrayBuffer (handles subrequest retries/redirects)
+const FWD_STREAMED = 0; // default
+const FWD_CLONED = 1;
+const FWD_BUFFERED = 2;
 
 // Standard HTTP Headers & Constants
 const HDR_CONTENT_LENGTH = "Content-Length";
@@ -35,7 +35,7 @@ const ODOH_HDR_ACCEPT = { [HDR_ACCEPT]: ODOH_MEDIA_TYPE };
 const ODOH_HDR_CONTENT_TYPE = { [HDR_CONTENT_TYPE]: ODOH_MEDIA_TYPE };
 const ODOH_HDR_CACHE_CONTROL = { [HDR_CACHE_CONTROL]: "no-cache, no-store" };
 
-// RFC 9230 Section 4.1 Proxy Error Header Definition
+// datatracker.ietf.org/doc/rfc9230/ (section 4.1)
 const ODOH_HDR_PROXY_ERR = {
   [HDR_PROXY_STATUS]: `${ODOH_ENDPOINT_NAME}; error=http_request_error`,
   [HDR_CONTENT_TYPE]: "text/plain; charset=utf-8",
@@ -108,82 +108,12 @@ function r500(txt) {
 }
 
 /**
- * Builds a clean upstream Request for ODoH proxying (Mode 0: Streaming).
- * Strips client-identifying headers (like IP address headers) to preserve client anonymity
- * as mandated by RFC 9230 section 4.1. Fixes header key bug in original implementation.
- *
- * @param {URL|string} u - Upstream Target URL
- * @param {Request} r - Original incoming Client Request
- * @returns {Request}
- */
-function request(u, r) {
-  const len = hdr(r.headers, HDR_CONTENT_LENGTH, "0");
-  const init = {
-    method: ODOH_METHOD,
-    body: r.body,
-    headers: {
-      ...ODOH_HDR_CONTENT_TYPE,
-      ...ODOH_HDR_CACHE_CONTROL,
-      ...ODOH_HDR_ACCEPT,
-      [HDR_CONTENT_LENGTH]: len,
-    },
-  };
-
-  // Node.js / Undici runtime compatibility for Request body streaming
-  if (r.body && typeof process !== "undefined" && process.versions?.node) {
-    init.duplex = "half";
-  }
-
-  return new Request(u, init);
-}
-
-/**
- * Builds a cloned upstream Request for ODoH proxying (Mode 1: Cloned).
- * Note: Clones original request object while targeting new upstream URL.
- *
- * @param {URL|string} u - Upstream Target URL
- * @param {Request} r - Original incoming Client Request
- * @returns {Request}
- */
-function clonedRequest(u, r) {
-  return new Request(u, r);
-}
-
-/**
- * Builds a buffered upstream Request for ODoH proxying (Mode 2: Buffered).
- * Reads full request body into ArrayBuffer prior to subrequest dispatch.
- * Prevents subrequest stream consumption issues when target redirects.
- *
- * @param {URL|string} u - Upstream Target URL
- * @param {ArrayBuffer} body - Buffered body contents
- * @returns {Request}
- */
-function bufferedRequest(u, body) {
-  let len = "0";
-  if (body) {
-    len = body.byteLength + "";
-  }
-  return new Request(u, {
-    method: ODOH_METHOD,
-    body: body,
-    headers: {
-      ...ODOH_HDR_CONTENT_TYPE,
-      ...ODOH_HDR_CACHE_CONTROL,
-      ...ODOH_HDR_ACCEPT,
-      [HDR_CONTENT_LENGTH]: len,
-    },
-  });
-}
-
-/**
- * Formats response from downstream target to client, capturing upstream headers
- * into debug `x-*` response headers.
- *
- * @param {Response} r - Downstream Target Response
- * @param {Request} fwdreq - Upstream Subrequest sent to target
+ * @param {Response} r
+ * @param {Request} fwdreq
  * @returns {Response}
  */
 function response(r, fwdreq) {
+  // rename the headers as Snippets snips some out (like the "Location" header)
   const orighdrs = {};
   let h = 0;
   let f = 0;
@@ -209,10 +139,69 @@ function response(r, fwdreq) {
 }
 
 /**
- * Constructs proxy response by copying downstream response and appending Proxy-Status header.
- *
- * @param {Response} r - Downstream Target Response
- * @param {Request} fwdreq - Upstream Subrequest sent to target
+ * @param {URL} u
+ * @param {Request} r
+ * @returns {Request}
+ */
+function request(u, r) {
+  const len = hdr(r.headers, HDR_CONTENT_LENGTH, "0");
+  const init = {
+    method: ODOH_METHOD,
+    body: r.body,
+    headers: {
+      ...ODOH_HDR_CONTENT_TYPE,
+      ...ODOH_HDR_CACHE_CONTROL,
+      ...ODOH_HDR_ACCEPT,
+      [HDR_CONTENT_LENGTH]: len,
+    },
+  };
+
+  // Node.js / Undici runtime compatibility for Request body streaming
+  if (r.body && typeof process !== "undefined" && process.versions?.node) {
+    init.duplex = "half";
+  }
+
+  return new Request(u, init);
+}
+
+/**
+ * @param {URL} u
+ * @param {Request} r
+ * @returns {Request}
+ */
+function clonedRequest(u, r) {
+  // to follow redirects
+  // stackoverflow.com/questions/55920957
+  return new Request(u, r);
+}
+
+/**
+ * @param {URL} u
+ * @param {ArrayBuffer} body
+ * @returns {Request}
+ */
+function bufferedRequest(u, body) {
+  let len = "0";
+  if (body) {
+    len = body.byteLength + "";
+  }
+  // to follow redirects
+  // stackoverflow.com/questions/55920957
+  return new Request(u, {
+    method: ODOH_METHOD,
+    body: body,
+    headers: {
+      ...ODOH_HDR_CONTENT_TYPE,
+      ...ODOH_HDR_CACHE_CONTROL,
+      ...ODOH_HDR_ACCEPT,
+      [HDR_CONTENT_LENGTH]: len,
+    },
+  });
+}
+
+/**
+ * @param {Response} r
+ * @param {Request} fwdreq
  * @returns {Response}
  */
 function cloneResponse(r, fwdreq) {
@@ -226,11 +215,10 @@ function cloneResponse(r, fwdreq) {
 }
 
 /**
- * Safely extracts header value case-insensitively from Headers instance.
- * @param {Headers} h - Request/Response Headers instance
- * @param {string} k - Header key
- * @param {string} d - Default fallback value
- * @returns {string}
+ *
+ * @param {Headers} h
+ * @param {string} k
+ * @param {string} d
  */
 function hdr(h, k, d) {
   if (!h || !k || typeof h.get !== "function") {
@@ -240,9 +228,9 @@ function hdr(h, k, d) {
 }
 
 /**
- * Extracts URL search query parameter value.
- * @param {URL} url - Request URL object
- * @param {string} name - Search parameter name
+ *
+ * @param {URL} url
+ * @param {string} name
  * @returns {string}
  */
 function param(url, name) {
@@ -253,13 +241,9 @@ function param(url, name) {
 }
 
 /**
- * Extracts path segment from URL according to index mapping:
- * - Segment 1: targethost
- * - Segment 2: targetpath
- * - Segment 3: fwd mode
  *
- * @param {URL} url - Request URL object
- * @param {string} name - Parameter identifier
+ * @param {URL} url
+ * @param {string} name
  * @returns {string}
  */
 function at(url, name) {
@@ -286,34 +270,23 @@ function at(url, name) {
   return "";
 }
 
-/**
- * Retrieves setting value checking search parameters first, then path segments.
- * @param {URL} url - Request URL object
- * @param {string} name - Parameter identifier
- * @returns {string}
- */
 function get(url, name) {
   return param(url, name) || at(url, name);
 }
 
-/**
- * Ensures path string begins with leading slash (`/`).
- * @param {string} path - Input path string
- * @returns {string}
- */
 function ensureLeadingSlash(path) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
 /**
- * Main HTTP request handler for ODoH Proxy Worker.
- * Handles request validation, target routing, subrequest forwarding, and response delivery.
- *
- * @param {Request} req - Incoming HTTP Request from Oblivious Client
- * @returns {Promise<Response>}
+ * Proxy the ODoH request to the target host/path and return the response.
+ * @param {Request} req
+ * @returns {Response}
  */
 async function handleRequest(req) {
   try {
+    // https://odoh.proxy/dns-query?targethost=&targetpath=
+    // https://odoh.proxy/{targethost}/{targetpath}
     const u = new URL(req.url);
 
     // Validate HTTP Method (RFC 9230 requires HTTP POST)
@@ -325,12 +298,11 @@ async function handleRequest(req) {
     const path0 = get(u, ODOH_TARGETPATH);
     const fwdRaw = get(u, FWD);
 
-    // Validate required Target Parameters
     if (!host) {
-      return r400(`Missing required parameter: ${ODOH_TARGETHOST}`);
+      return r400(`Missing ${ODOH_TARGETHOST}`);
     }
     if (!path0) {
-      return r400(`Missing required parameter: ${ODOH_TARGETPATH}`);
+      return r400(`Missing ${ODOH_TARGETPATH}`);
     }
 
     // Parse forwarding mode integer (default: 0 - Streaming)
@@ -342,33 +314,41 @@ async function handleRequest(req) {
       }
     }
 
+    // ensure targetPath starts with a slash
     const path = ensureLeadingSlash(path0);
+
     const target = `https://${host}${path}`;
 
     if (fwdMode === FWD_BUFFERED) {
-      // Forward Mode 2: Buffered
-      // Reads body into ArrayBuffer before sending subrequest
+      // == string or number
+      // if redirected by the target:
+      // with "fetch(bufferedRequest())" => 1022 Snippets exceeded subrequests limit
       const body = await req.arrayBuffer();
       const fwdreq = bufferedRequest(target, body);
       const downstream = await fetch(fwdreq);
       return cloneResponse(downstream, fwdreq);
     } else if (fwdMode === FWD_CLONED) {
-      // Forward Mode 1: Cloned
+      // if redirected by the target:
+      // with "return cloneResponse()" => 405 Method Not Allowed
+      // with "return response()" => 301 Moved Permanently
       const fwdreq = clonedRequest(target, req);
       const downstream = await fetch(fwdreq);
       return response(downstream, fwdreq);
     } else {
-      // Forward Mode 0: Streamed (Default)
+      // fwd == FWD_STREAMED
+      // if redirected by the target:
+      // with "return clonedResponse()" => 500 Internal Server Error
       const fwdreq = request(target, req);
       const downstream = await fetch(fwdreq);
       return cloneResponse(downstream, fwdreq);
     }
   } catch (err) {
-    console.error("ODoH Proxy handleRequest Exception:", err);
+    console.error(err);
     return r500(err.message || "Internal Proxy Error");
   }
 }
 
+// developers.cloudflare.com/workers/runtime-apis/fetch-event/#syntax-module-worker
 export default {
   async fetch(r, env, ctx) {
     return handleRequest(r);
