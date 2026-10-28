@@ -21,7 +21,7 @@ const FWD_CLONED = 1;   // Clones request (preserves original request metadata)
 const FWD_BUFFERED = 2; // Buffers body into memory ArrayBuffer (handles subrequest retries/redirects)
 
 // Standard HTTP Headers & Constants
-const HDR_CONTENT_LENGTH = "Content-Length";
+const HDR_CONTENT_LENGTH = "Content-Length"; // Legacy constant name kept for reference (was HDR_CONTENT_LEN)
 const HDR_CONTENT_TYPE = "Content-Type";
 const HDR_ACCEPT = "Accept";
 const HDR_CACHE_CONTROL = "Cache-Control";
@@ -66,7 +66,7 @@ function proxyStatusKV(code) {
 
 /**
  * Constructs an HTTP 405 Method Not Allowed error response.
- * RFC 9230 requires MUST use HTTP POST for ODoH requests.
+ * RFC 9230 Section 4.1 requires MUST use HTTP POST for ODoH requests.
  * @param {string} txt - Descriptive error message
  * @returns {Response}
  */
@@ -131,7 +131,7 @@ function request(u, r) {
     },
   };
 
-  // Node.js / Undici runtime compatibility for Request body streaming
+  // Node.js / Undici runtime compatibility for Request body streaming during local testing
   if (r.body && typeof process !== "undefined" && process.versions?.node) {
     init.duplex = "half";
   }
@@ -142,6 +142,7 @@ function request(u, r) {
 /**
  * Builds a cloned upstream Request for ODoH proxying (Mode 1: Cloned).
  * Note: Clones original request object while targeting new upstream URL.
+ * Note: Used to follow redirects (see stackoverflow.com/questions/55920957).
  *
  * @param {URL|string} u - Upstream Target URL
  * @param {Request} r - Original incoming Client Request
@@ -157,6 +158,7 @@ function clonedRequest(u, r) {
  * Builds a buffered upstream Request for ODoH proxying (Mode 2: Buffered).
  * Reads full request body into ArrayBuffer prior to subrequest dispatch.
  * Prevents subrequest stream consumption issues when target redirects.
+ * Note: Used to follow redirects (see stackoverflow.com/questions/55920957).
  *
  * @param {URL|string} u - Upstream Target URL
  * @param {ArrayBuffer} body - Buffered body contents
@@ -184,6 +186,7 @@ function bufferedRequest(u, body) {
 /**
  * Formats response from downstream target to client, capturing upstream headers
  * into debug `x-*` response headers.
+ * Note: Renames headers as Cloudflare Snippets snips some out (like the "Location" header).
  *
  * @param {Response} r - Downstream Target Response
  * @param {Request} fwdreq - Upstream Subrequest sent to target
@@ -325,7 +328,7 @@ async function handleRequest(req) {
     // https://odoh.proxy/{targethost}/{targetpath}
     const u = new URL(req.url);
 
-    // Validate HTTP Method (RFC 9230 requires HTTP POST)
+    // Validate HTTP Method (RFC 9230 Section 4.1 requires HTTP POST)
     if (req.method !== ODOH_METHOD) {
       return r405(`Method Not Allowed: Only ${ODOH_METHOD} is supported for ODoH requests.`);
     }
@@ -342,7 +345,7 @@ async function handleRequest(req) {
       return r400(`Missing required parameter: ${ODOH_TARGETPATH}`);
     }
 
-    // Parse forwarding mode integer (default: 0 - Streaming)
+    // Parse forwarding mode integer safely (default: 0 - Streaming / FWD_STREAMED)
     let fwdMode = FWD_STREAMED;
     if (fwdRaw !== "") {
       const parsed = parseInt(fwdRaw, 10);
