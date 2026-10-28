@@ -15,6 +15,7 @@ const ODOH_TARGETHOST = "targethost";
 const ODOH_TARGETPATH = "targetpath";
 
 // Forwarding Modes (fwd parameter)
+// default
 const FWD_STREAMED = 0; // Default: Streams request body (lowest latency & memory)
 const FWD_CLONED = 1;   // Clones request (preserves original request metadata)
 const FWD_BUFFERED = 2; // Buffers body into memory ArrayBuffer (handles subrequest retries/redirects)
@@ -35,6 +36,7 @@ const ODOH_HDR_ACCEPT = { [HDR_ACCEPT]: ODOH_MEDIA_TYPE };
 const ODOH_HDR_CONTENT_TYPE = { [HDR_CONTENT_TYPE]: ODOH_MEDIA_TYPE };
 const ODOH_HDR_CACHE_CONTROL = { [HDR_CACHE_CONTROL]: "no-cache, no-store" };
 
+// datatracker.ietf.org/doc/rfc9230/ (section 4.1)
 // RFC 9230 Section 4.1 Proxy Error Header Definition
 const ODOH_HDR_PROXY_ERR = {
   [HDR_PROXY_STATUS]: `${ODOH_ENDPOINT_NAME}; error=http_request_error`,
@@ -146,6 +148,8 @@ function request(u, r) {
  * @returns {Request}
  */
 function clonedRequest(u, r) {
+  // to follow redirects
+  // stackoverflow.com/questions/55920957
   return new Request(u, r);
 }
 
@@ -163,6 +167,8 @@ function bufferedRequest(u, body) {
   if (body) {
     len = body.byteLength + "";
   }
+  // to follow redirects
+  // stackoverflow.com/questions/55920957
   return new Request(u, {
     method: ODOH_METHOD,
     body: body,
@@ -185,6 +191,7 @@ function bufferedRequest(u, body) {
  */
 function response(r, fwdreq) {
   const orighdrs = {};
+  // rename the headers as Snippets snips some out (like the "Location" header)
   let h = 0;
   let f = 0;
   for (const [k, v] of r.headers) {
@@ -314,6 +321,8 @@ function ensureLeadingSlash(path) {
  */
 async function handleRequest(req) {
   try {
+    // https://odoh.proxy/dns-query?targethost=&targetpath=
+    // https://odoh.proxy/{targethost}/{targetpath}
     const u = new URL(req.url);
 
     // Validate HTTP Method (RFC 9230 requires HTTP POST)
@@ -342,23 +351,33 @@ async function handleRequest(req) {
       }
     }
 
+    // ensure targetPath starts with a slash
     const path = ensureLeadingSlash(path0);
     const target = `https://${host}${path}`;
 
     if (fwdMode === FWD_BUFFERED) {
       // Forward Mode 2: Buffered
       // Reads body into ArrayBuffer before sending subrequest
+      // == string or number
+      // if redirected by the target:
+      // with "fetch(bufferedRequest())" => 1022 Snippets exceeded subrequests limit
       const body = await req.arrayBuffer();
       const fwdreq = bufferedRequest(target, body);
       const downstream = await fetch(fwdreq);
       return cloneResponse(downstream, fwdreq);
     } else if (fwdMode === FWD_CLONED) {
       // Forward Mode 1: Cloned
+      // if redirected by the target:
+      // with "return cloneResponse()" => 405 Method Not Allowed
+      // with "return response()" => 301 Moved Permanently
       const fwdreq = clonedRequest(target, req);
       const downstream = await fetch(fwdreq);
       return response(downstream, fwdreq);
     } else {
       // Forward Mode 0: Streamed (Default)
+      // fwd == FWD_STREAMED
+      // if redirected by the target:
+      // with "return clonedResponse()" => 500 Internal Server Error
       const fwdreq = request(target, req);
       const downstream = await fetch(fwdreq);
       return cloneResponse(downstream, fwdreq);
@@ -369,6 +388,7 @@ async function handleRequest(req) {
   }
 }
 
+// developers.cloudflare.com/workers/runtime-apis/fetch-event/#syntax-module-worker
 export default {
   async fetch(r, env, ctx) {
     return handleRequest(r);
