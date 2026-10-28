@@ -22,6 +22,7 @@ const FWD_BUFFERED = 2; // Buffers body into memory ArrayBuffer (handles subrequ
 
 // Standard HTTP Headers & Constants
 const HDR_CONTENT_LENGTH = "Content-Length"; // Legacy constant name kept for reference (was HDR_CONTENT_LEN)
+const HDR_CONTENT_LEN = HDR_CONTENT_LENGTH; // Legacy alias kept for reference (original main constant name)
 const HDR_CONTENT_TYPE = "Content-Type";
 const HDR_ACCEPT = "Accept";
 const HDR_CACHE_CONTROL = "Cache-Control";
