@@ -2,6 +2,8 @@
 
 An ultra-fast, privacy-preserving **Oblivious DNS-over-HTTPS (ODoH) Proxy** implementation compliant with [RFC 9230](https://datatracker.ietf.org/doc/rfc9230/), designed specifically to run on [Cloudflare Workers](https://workers.cloudflare.com/).
 
+A Cloudflare Workers endpoint (proxy) to an upstream Oblivious DNS-over-HTTPS target.
+
 ---
 
 ## Table of Contents
@@ -21,6 +23,8 @@ An ultra-fast, privacy-preserving **Oblivious DNS-over-HTTPS (ODoH) Proxy** impl
 ## Overview
 
 [RFC 9230](https://datatracker.ietf.org/doc/rfc9230/) defines **Oblivious DNS-over-HTTPS (ODoH)**. An **Oblivious Proxy** is a specialized HTTP server that forwards encrypted DNS messages between an **Oblivious Client** and an **Oblivious Target**.
+
+As identified by a URI Template as in [RFC6570](https://datatracker.ietf.org/doc/rfc6570) (see Section 4.1). *Oblivious Proxy* is not a full HTTP proxy but a specialized server that forwards Oblivious DNS messages.
 
 The Proxy acts as a privacy shield:
 * The Proxy sees **WHO** is making the request (Client IP address) but **NOT WHAT** is being requested (the DNS query is encrypted using the Target's HPKE public key).
@@ -253,6 +257,17 @@ sequenceDiagram
     Note over Proxy: 4. Attach Proxy-Status header<br/>Relay response
     Proxy-->>Client: HTTP 200 OK (Encrypted Response)
     Note over Client: 5. Decrypt response with Symmetric Key
+```
+
+### Original Packet Flow Diagram (ASCII)
+
+```
+        --- [ Request encrypted with Target public key ] -->
+   +---------+             +-----------+             +-----------+
+   | Client  +-------------> Oblivious +-------------> Oblivious |
+   |         <-------------+   Proxy   <-------------+  Target   |
+   +---------+             +-----------+             +-----------+
+       <-- [   Response encrypted with symmetric key   ] ---
 ```
 
 ---
