@@ -124,10 +124,11 @@ function request(u, r) {
   const init = {
     method: ODOH_METHOD,
     body: r.body,
+    // ⚡ Bolt Optimization: Construct headers directly without spreading 3 separate objects
     headers: {
-      ...ODOH_HDR_CONTENT_TYPE,
-      ...ODOH_HDR_CACHE_CONTROL,
-      ...ODOH_HDR_ACCEPT,
+      [HDR_CONTENT_TYPE]: ODOH_MEDIA_TYPE,
+      [HDR_CACHE_CONTROL]: "no-cache, no-store",
+      [HDR_ACCEPT]: ODOH_MEDIA_TYPE,
       [HDR_CONTENT_LENGTH]: len,
     },
   };
@@ -172,13 +173,14 @@ function bufferedRequest(u, body) {
   }
   // to follow redirects
   // stackoverflow.com/questions/55920957
+  // ⚡ Bolt Optimization: Construct headers directly without spreading 3 separate objects
   return new Request(u, {
     method: ODOH_METHOD,
     body: body,
     headers: {
-      ...ODOH_HDR_CONTENT_TYPE,
-      ...ODOH_HDR_CACHE_CONTROL,
-      ...ODOH_HDR_ACCEPT,
+      [HDR_CONTENT_TYPE]: ODOH_MEDIA_TYPE,
+      [HDR_CACHE_CONTROL]: "no-cache, no-store",
+      [HDR_ACCEPT]: ODOH_MEDIA_TYPE,
       [HDR_CONTENT_LENGTH]: len,
     },
   });
@@ -334,9 +336,22 @@ async function handleRequest(req) {
       return r405(`Method Not Allowed: Only ${ODOH_METHOD} is supported for ODoH requests.`);
     }
 
-    const host = get(u, ODOH_TARGETHOST);
-    const path0 = get(u, ODOH_TARGETPATH);
-    const fwdRaw = get(u, FWD);
+    // ⚡ Bolt Optimization: Single-pass parameter extraction.
+    // Avoids repeatedly querying searchParams and avoids splitting pathname 3 times on every request.
+    const sp = u.searchParams;
+    let host = sp.get(ODOH_TARGETHOST);
+    let path0 = sp.get(ODOH_TARGETPATH);
+    let fwdRaw = sp.get(FWD);
+
+    if (!host || !path0 || fwdRaw === null) {
+      const pathname = u.pathname;
+      if (pathname && pathname !== "/") {
+        const segments = pathname.split("/");
+        if (!host && segments.length > 1) host = segments[1];
+        if (!path0 && segments.length > 2) path0 = segments[2];
+        if (fwdRaw === null && segments.length > 3) fwdRaw = segments[3];
+      }
+    }
 
     // Validate required Target Parameters
     if (!host) {
@@ -348,7 +363,7 @@ async function handleRequest(req) {
 
     // Parse forwarding mode integer safely (default: 0 - Streaming / FWD_STREAMED)
     let fwdMode = FWD_STREAMED;
-    if (fwdRaw !== "") {
+    if (fwdRaw !== "" && fwdRaw !== null && fwdRaw !== undefined) {
       const parsed = parseInt(fwdRaw, 10);
       if (!isNaN(parsed)) {
         fwdMode = parsed;
