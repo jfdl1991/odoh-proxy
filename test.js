@@ -40,9 +40,30 @@ async function runTests() {
     console.log("Test 2: Reject Missing Target Host");
     const req = new Request("https://proxy.example/", {
       method: "POST",
+      headers: { "Content-Type": "application/oblivious-dns-message" },
     });
     const res = await worker.fetch(req);
     assert.strictEqual(res.status, 400);
+    console.log("  PASSED");
+  }
+
+  // Security Test: Content-Type Header Validation
+  {
+    console.log("Test 2b: Reject Missing or Invalid Content-Type");
+    const reqNoHeader = new Request("https://proxy.example/odoh.target.com/dns-query", {
+      method: "POST",
+    });
+    const resNoHeader = await worker.fetch(reqNoHeader);
+    assert.strictEqual(resNoHeader.status, 400);
+    assert.strictEqual(resNoHeader.headers.get("Proxy-Status"), "RethinkDNS; error=http_request_error");
+
+    const reqBadType = new Request("https://proxy.example/odoh.target.com/dns-query", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+    });
+    const resBadType = await worker.fetch(reqBadType);
+    assert.strictEqual(resBadType.status, 400);
+    assert.strictEqual(resBadType.headers.get("Proxy-Status"), "RethinkDNS; error=http_request_error");
     console.log("  PASSED");
   }
 

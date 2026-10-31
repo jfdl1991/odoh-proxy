@@ -334,6 +334,14 @@ async function handleRequest(req) {
       return r405(`Method Not Allowed: Only ${ODOH_METHOD} is supported for ODoH requests.`);
     }
 
+    // Security: Validate Content-Type header (RFC 9230 Section 4.1 requires application/oblivious-dns-message)
+    // Enforcing this prevents unauthorized media types, prevents cross-origin/CSRF abuse from browsers
+    // (e.g. form submission triggers), and blocks malformed payloads from being relayed upstream.
+    const contentType = hdr(req.headers, HDR_CONTENT_TYPE, "").toLowerCase().split(";")[0].trim();
+    if (contentType !== ODOH_MEDIA_TYPE) {
+      return r400(`Bad Request: Invalid or missing Content-Type header. Expected '${ODOH_MEDIA_TYPE}'`);
+    }
+
     const host = get(u, ODOH_TARGETHOST);
     const path0 = get(u, ODOH_TARGETPATH);
     const fwdRaw = get(u, FWD);
