@@ -37,6 +37,13 @@ const ODOH_HDR_ACCEPT = { [HDR_ACCEPT]: ODOH_MEDIA_TYPE };
 const ODOH_HDR_CONTENT_TYPE = { [HDR_CONTENT_TYPE]: ODOH_MEDIA_TYPE };
 const ODOH_HDR_CACHE_CONTROL = { [HDR_CACHE_CONTROL]: "no-cache, no-store" };
 
+// Bolt optimization: Pre-consolidate static headers into single object to avoid multi-object spread allocations per request
+const ODOH_UPSTREAM_HEADERS_BASE = {
+  [HDR_CONTENT_TYPE]: ODOH_MEDIA_TYPE,
+  [HDR_CACHE_CONTROL]: "no-cache, no-store",
+  [HDR_ACCEPT]: ODOH_MEDIA_TYPE,
+};
+
 // datatracker.ietf.org/doc/rfc9230/ (section 4.1)
 // RFC 9230 Section 4.1 Proxy Error Header Definition
 const ODOH_HDR_PROXY_ERR = {
@@ -125,9 +132,7 @@ function request(u, r) {
     method: ODOH_METHOD,
     body: r.body,
     headers: {
-      ...ODOH_HDR_CONTENT_TYPE,
-      ...ODOH_HDR_CACHE_CONTROL,
-      ...ODOH_HDR_ACCEPT,
+      ...ODOH_UPSTREAM_HEADERS_BASE,
       [HDR_CONTENT_LENGTH]: len,
     },
   };
@@ -176,9 +181,7 @@ function bufferedRequest(u, body) {
     method: ODOH_METHOD,
     body: body,
     headers: {
-      ...ODOH_HDR_CONTENT_TYPE,
-      ...ODOH_HDR_CACHE_CONTROL,
-      ...ODOH_HDR_ACCEPT,
+      ...ODOH_UPSTREAM_HEADERS_BASE,
       [HDR_CONTENT_LENGTH]: len,
     },
   });
@@ -282,7 +285,8 @@ function at(url, name) {
   if (!path || path === "/") {
     return "";
   }
-  const p = path.split("/");
+  // Bolt optimization: Cache pathname segments on URL instance to eliminate redundant string split and array allocations across lookups
+  const p = url._segments || (url._segments = path.split("/"));
   let i = Number.MAX_SAFE_INTEGER;
   if (name === ODOH_TARGETHOST) {
     i = 1;
