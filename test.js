@@ -40,9 +40,30 @@ async function runTests() {
     console.log("Test 2: Reject Missing Target Host");
     const req = new Request("https://proxy.example/", {
       method: "POST",
+      headers: { "Content-Type": "application/oblivious-dns-message" },
     });
     const res = await worker.fetch(req);
     assert.strictEqual(res.status, 400);
+    console.log("  PASSED");
+  }
+
+  // Test 2b: Reject Missing or Invalid Content-Type (RFC 9230 Section 4.1)
+  {
+    console.log("Test 2b: Reject Missing or Invalid Content-Type");
+    const reqNoCT = new Request("https://proxy.example/odoh.target.com/dns-query", {
+      method: "POST",
+    });
+    const resNoCT = await worker.fetch(reqNoCT);
+    assert.strictEqual(resNoCT.status, 400);
+    assert.strictEqual(resNoCT.headers.get("Proxy-Status"), "RethinkDNS; error=http_request_error");
+
+    const reqBadCT = new Request("https://proxy.example/odoh.target.com/dns-query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const resBadCT = await worker.fetch(reqBadCT);
+    assert.strictEqual(resBadCT.status, 400);
+    assert.strictEqual(resBadCT.headers.get("Proxy-Status"), "RethinkDNS; error=http_request_error");
     console.log("  PASSED");
   }
 
