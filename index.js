@@ -334,6 +334,13 @@ async function handleRequest(req) {
       return r405(`Method Not Allowed: Only ${ODOH_METHOD} is supported for ODoH requests.`);
     }
 
+    // Security & RFC 9230 Section 4.1: Verify Content-Type is application/oblivious-dns-message.
+    // Enforcing strict media type prevents using the proxy for arbitrary non-ODoH payloads or SSRF relay.
+    const contentType = req.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().startsWith(ODOH_MEDIA_TYPE)) {
+      return r400(`Invalid or missing Content-Type: expected ${ODOH_MEDIA_TYPE}`);
+    }
+
     const host = get(u, ODOH_TARGETHOST);
     const path0 = get(u, ODOH_TARGETPATH);
     const fwdRaw = get(u, FWD);
