@@ -334,9 +334,22 @@ async function handleRequest(req) {
       return r405(`Method Not Allowed: Only ${ODOH_METHOD} is supported for ODoH requests.`);
     }
 
-    const host = get(u, ODOH_TARGETHOST);
-    const path0 = get(u, ODOH_TARGETPATH);
-    const fwdRaw = get(u, FWD);
+    // Bolt: Single-pass route parameter extraction.
+    // Avoids redundant URL searchParam lookups and pathname.split("/") string allocations.
+    const sp = u.searchParams;
+    let host = sp.get(ODOH_TARGETHOST) || "";
+    let path0 = sp.get(ODOH_TARGETPATH) || "";
+    let fwdRaw = sp.get(FWD) || "";
+
+    if (!host || !path0 || !fwdRaw) {
+      const pathname = u.pathname;
+      if (pathname && pathname !== "/") {
+        const segments = pathname.split("/");
+        if (!host && segments.length > 1) host = segments[1];
+        if (!path0 && segments.length > 2) path0 = segments[2];
+        if (!fwdRaw && segments.length > 3) fwdRaw = segments[3];
+      }
+    }
 
     // Validate required Target Parameters
     if (!host) {
