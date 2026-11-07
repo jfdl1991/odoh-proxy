@@ -1,0 +1,3 @@
+## 2025-11-07 - URL Parameter Extraction Overhead in High-Throughput Edge Proxies
+**Learning:** In Cloudflare Workers running high-frequency proxy subrequests, calling `URL.pathname.split("/")` repeatedly across multiple parameter getters (`at("targethost")`, `at("targetpath")`, `at("fwd")`) repeatedly allocates string arrays and splits the path string on every incoming request. Additionally, querying `URL.searchParams.get()` for empty query strings still instantiates search parameter parsers.
+**Action:** Extract routing parameters (`targethost`, `targetpath`, `fwd`) in a single pass (`parseTargetParams`), only parsing `searchParams` if query string is non-empty, and splitting `pathname` at most once as fallback.
