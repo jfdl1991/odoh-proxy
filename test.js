@@ -90,48 +90,91 @@ async function runTests() {
     console.log("  PASSED");
   }
 
-  console.log("\nAll initial unit tests executed successfully!");
+  // Test 5: Test Streamed Request Forwarding (fwd=0)
+  {
+    console.log("Test 5: Streamed Request Forwarding (fwd=0)");
+    const reqBody = "encrypted-dns-query-payload";
+    const req = new Request("https://proxy.example/odoh.target.com/dns-query/0", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/oblivious-dns-message",
+        "Content-Length": String(reqBody.length),
+      },
+      body: reqBody,
+    });
+    const res = await worker.fetch(req);
+    assert.strictEqual(res.status, 200);
+
+    const upstreamHeaders = typeof lastFetchInput === "object" ? lastFetchInput.headers : new Headers(lastFetchInit.headers);
+    const contentLength = upstreamHeaders.get("Content-Length");
+    const buggyHeader = upstreamHeaders.get("HDR_CONTENT_LEN");
+
+    assert.strictEqual(contentLength, String(reqBody.length));
+    assert.strictEqual(buggyHeader, null);
+    console.log("  PASSED - Correct Content-Length:", contentLength);
+  }
+
+  // Test 6: Verify Proxy-Status Header on Response
+  {
+    console.log("Test 6: Verify Proxy-Status Header on Response");
+    const req = new Request("https://proxy.example/odoh.target.com/dns-query", {
+      method: "POST",
+      headers: { "Content-Type": "application/oblivious-dns-message" },
+      body: "test",
+    });
+    const res = await worker.fetch(req);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.headers.get("Proxy-Status"), "RethinkDNS; received-status=200");
+    console.log("  PASSED - Proxy-Status header present:", res.headers.get("Proxy-Status"));
+  }
+
+  // Test 7: Default fwd mode with path routing (no fwd param provided)
+  {
+    console.log("Test 7: Path routing with default fwd mode (streaming)");
+    const req = new Request("https://proxy.example/resolver.example.org/dns-query", {
+      method: "POST",
+      headers: { "Content-Type": "application/oblivious-dns-message" },
+      body: "dns-query-data",
+    });
+    const res = await worker.fetch(req);
+    assert.strictEqual(res.status, 200);
+    const upstreamUrl = typeof lastFetchInput === "string" ? lastFetchInput : lastFetchInput.url;
+    assert.strictEqual(upstreamUrl, "https://resolver.example.org/dns-query");
+    console.log("  PASSED");
+  }
+
+  // Test 8: Query routing with default fwd mode
+  {
+    console.log("Test 8: Query routing with default fwd mode");
+    const req = new Request("https://proxy.example/dns-query?targethost=query-resolver.org&targetpath=custom-path", {
+      method: "POST",
+      headers: { "Content-Type": "application/oblivious-dns-message" },
+      body: "query-data",
+    });
+    const res = await worker.fetch(req);
+    assert.strictEqual(res.status, 200);
+    const upstreamUrl = typeof lastFetchInput === "string" ? lastFetchInput : lastFetchInput.url;
+    assert.strictEqual(upstreamUrl, "https://query-resolver.org/custom-path");
+    console.log("  PASSED");
+  }
+
+  // Test 9: Reject request when targetpath is missing in path routing
+  {
+    console.log("Test 9: Reject missing targetpath in path routing");
+    const req = new Request("https://proxy.example/resolver.example.org", {
+      method: "POST",
+      headers: { "Content-Type": "application/oblivious-dns-message" },
+      body: "data",
+    });
+    const res = await worker.fetch(req);
+    assert.strictEqual(res.status, 400);
+    console.log("  PASSED");
+  }
+
+  console.log("\nAll unit tests executed successfully!");
 }
 
 runTests().catch((err) => {
   console.error("Test execution failed:", err);
   process.exit(1);
 });
-
-// Test 5: Test Streamed Request Forwarding (fwd=0)
-{
-  console.log("Test 5: Streamed Request Forwarding (fwd=0)");
-  const reqBody = "encrypted-dns-query-payload";
-  const req = new Request("https://proxy.example/odoh.target.com/dns-query/0", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/oblivious-dns-message",
-      "Content-Length": String(reqBody.length),
-    },
-    body: reqBody,
-  });
-  const res = await worker.fetch(req);
-  assert.strictEqual(res.status, 200);
-
-  const upstreamHeaders = typeof lastFetchInput === "object" ? lastFetchInput.headers : new Headers(lastFetchInit.headers);
-  const contentLength = upstreamHeaders.get("Content-Length");
-  const buggyHeader = upstreamHeaders.get("HDR_CONTENT_LEN");
-
-  assert.strictEqual(contentLength, String(reqBody.length));
-  assert.strictEqual(buggyHeader, null);
-  console.log("  PASSED - Correct Content-Length:", contentLength);
-}
-
-// Test 6: Verify Proxy-Status Header on Response
-{
-  console.log("Test 6: Verify Proxy-Status Header on Response");
-  const req = new Request("https://proxy.example/odoh.target.com/dns-query", {
-    method: "POST",
-    headers: { "Content-Type": "application/oblivious-dns-message" },
-    body: "test",
-  });
-  const res = await worker.fetch(req);
-  assert.strictEqual(res.status, 200);
-  assert.strictEqual(res.headers.get("Proxy-Status"), "RethinkDNS; received-status=200");
-  console.log("  PASSED - Proxy-Status header present:", res.headers.get("Proxy-Status"));
-}
