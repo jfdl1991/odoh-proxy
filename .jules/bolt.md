@@ -1,0 +1,3 @@
+## 2025-11-08 - Path Segment Extraction Memoization in Workers URL Router
+**Learning:** In Cloudflare Workers routing logic, parsing URL path parameters across consecutive parameter lookups (`targethost`, `targetpath`, `fwd`) with `pathname.split('/')` causes redundant string splits and intermediate array allocations on every request. Caching split segments directly on the transient `URL` instance (`url._pathParts`) avoids repeated parsing without altering function signatures or global state.
+**Action:** When handling multi-parameter routing from URLs, memoize parsed segments on the request URL object to avoid repeated parsing passes.
