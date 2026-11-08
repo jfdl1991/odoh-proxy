@@ -282,7 +282,9 @@ function at(url, name) {
   if (!path || path === "/") {
     return "";
   }
-  const p = path.split("/");
+  // ⚡ Bolt optimization: Memoize split path segments on URL instance to avoid redundant
+  // string splitting and array allocations across successive calls for host, path, and fwd.
+  const p = url._pathParts || (url._pathParts = path.split("/"));
   let i = Number.MAX_SAFE_INTEGER;
   if (name === ODOH_TARGETHOST) {
     i = 1;
