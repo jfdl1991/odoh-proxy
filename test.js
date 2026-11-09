@@ -90,6 +90,21 @@ async function runTests() {
     console.log("  PASSED");
   }
 
+  // Test 4b: Path Parameters Routing with default and custom fwd modes
+  {
+    console.log("Test 4b: Path Parameters Routing without fwd segment");
+    const req = new Request("https://proxy.example/target.org/custom-query", {
+      method: "POST",
+      headers: { "Content-Type": "application/oblivious-dns-message" },
+      body: "data",
+    });
+    const res = await worker.fetch(req);
+    assert.strictEqual(res.status, 200);
+    const upstreamUrl = typeof lastFetchInput === "string" ? lastFetchInput : lastFetchInput.url;
+    assert.strictEqual(upstreamUrl, "https://target.org/custom-query");
+    console.log("  PASSED");
+  }
+
   console.log("\nAll initial unit tests executed successfully!");
 }
 
