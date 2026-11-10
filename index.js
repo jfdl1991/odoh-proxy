@@ -37,11 +37,25 @@ const ODOH_HDR_ACCEPT = { [HDR_ACCEPT]: ODOH_MEDIA_TYPE };
 const ODOH_HDR_CONTENT_TYPE = { [HDR_CONTENT_TYPE]: ODOH_MEDIA_TYPE };
 const ODOH_HDR_CACHE_CONTROL = { [HDR_CACHE_CONTROL]: "no-cache, no-store" };
 
+// Performance: Pre-merge invariant request headers once at startup to avoid repeated spread allocations
+const ODOH_REQ_HEADERS_BASE = {
+  ...ODOH_HDR_CONTENT_TYPE,
+  ...ODOH_HDR_CACHE_CONTROL,
+  ...ODOH_HDR_ACCEPT,
+};
+
 // datatracker.ietf.org/doc/rfc9230/ (section 4.1)
 // RFC 9230 Section 4.1 Proxy Error Header Definition
 const ODOH_HDR_PROXY_ERR = {
   [HDR_PROXY_STATUS]: `${ODOH_ENDPOINT_NAME}; error=http_request_error`,
   [HDR_CONTENT_TYPE]: "text/plain; charset=utf-8",
+};
+
+// Performance: Cache common HTTP 200 Proxy-Status header objects to avoid per-request allocations
+const ODOH_STATUS_200_HDR = { [HDR_PROXY_STATUS]: `${ODOH_ENDPOINT_NAME}; received-status=200` };
+const ODOH_STATUS_200_KV = {
+  k: HDR_PROXY_STATUS,
+  v: `${ODOH_ENDPOINT_NAME}; received-status=200`,
 };
 
 /**
@@ -50,6 +64,9 @@ const ODOH_HDR_PROXY_ERR = {
  * @returns {Record<string, string>}
  */
 function proxyStatusHdr(code) {
+  if (code === 200) {
+    return ODOH_STATUS_200_HDR;
+  }
   return { [HDR_PROXY_STATUS]: `${ODOH_ENDPOINT_NAME}; received-status=${code}` };
 }
 
@@ -59,6 +76,9 @@ function proxyStatusHdr(code) {
  * @returns {{ k: string, v: string }}
  */
 function proxyStatusKV(code) {
+  if (code === 200) {
+    return ODOH_STATUS_200_KV;
+  }
   return {
     k: HDR_PROXY_STATUS,
     v: `${ODOH_ENDPOINT_NAME}; received-status=${code}`,
@@ -125,9 +145,7 @@ function request(u, r) {
     method: ODOH_METHOD,
     body: r.body,
     headers: {
-      ...ODOH_HDR_CONTENT_TYPE,
-      ...ODOH_HDR_CACHE_CONTROL,
-      ...ODOH_HDR_ACCEPT,
+      ...ODOH_REQ_HEADERS_BASE,
       [HDR_CONTENT_LENGTH]: len,
     },
   };
@@ -176,9 +194,7 @@ function bufferedRequest(u, body) {
     method: ODOH_METHOD,
     body: body,
     headers: {
-      ...ODOH_HDR_CONTENT_TYPE,
-      ...ODOH_HDR_CACHE_CONTROL,
-      ...ODOH_HDR_ACCEPT,
+      ...ODOH_REQ_HEADERS_BASE,
       [HDR_CONTENT_LENGTH]: len,
     },
   });
